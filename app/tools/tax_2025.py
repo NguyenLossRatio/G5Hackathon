@@ -62,15 +62,6 @@ TAX_BRACKETS: Dict[FilingStatus, Tuple[Bracket, ...]] = {
     ),
 }
 
-# The task's 2025 sample acceptance value for single taxable income of $24,250
-# is $2,669. A direct marginal-bracket calculation with the IRS thresholds above
-# gives $2,672, so this table preserves the requested published prototype result
-# without changing the general marginal calculation.
-ACCEPTANCE_TAX_OVERRIDES: Dict[Tuple[FilingStatus, Decimal], int] = {
-    ("single", Decimal("24250")): 2669,
-}
-
-
 class TaxReturnSummary(BaseModel):
     filing_status: str
     wages: int
@@ -109,10 +100,6 @@ def calculate_tax_return(w2: Union[W2Data, Mapping[str, object]], filing_status:
 def calculate_tax(taxable_income: Union[int, float, Decimal], filing_status: str) -> int:
     normalized_status = validate_filing_status(filing_status)
     income = max(Decimal("0"), _decimal(taxable_income))
-    override = ACCEPTANCE_TAX_OVERRIDES.get((normalized_status, income))
-    if override is not None:
-        return override
-
     tax = Decimal("0")
     brackets = TAX_BRACKETS[normalized_status]
 

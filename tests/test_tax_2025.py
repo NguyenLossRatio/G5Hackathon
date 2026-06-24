@@ -42,9 +42,9 @@ def test_calculate_tax_return_for_single_sample_w2():
         "agi": 40_000,
         "standard_deduction": 15_750,
         "taxable_income": 24_250,
-        "tax": 2_669,
+        "tax": 2_672,
         "federal_withholding": 3_200,
-        "refund": 531,
+        "refund": 528,
         "amount_owed": 0,
     }
 
@@ -85,6 +85,7 @@ def test_calculate_tax_return_accepts_dict_w2_and_normalizes_filing_status():
 def test_calculate_tax_uses_single_second_marginal_bracket():
     assert calculate_tax(11_925, "single") == 1_193
     assert calculate_tax(12_000, "single") == 1_202
+    assert calculate_tax(24_250, "single") == 2_672
 
 
 def test_calculate_tax_returns_zero_for_no_taxable_income():
