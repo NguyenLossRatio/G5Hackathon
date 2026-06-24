@@ -71,7 +71,9 @@ elements.chatForm?.addEventListener("submit", async (event) => {
   }
   appendMessage("user", value);
   elements.messageInput.value = "";
-  if (state.actions.includes("answer_household")) {
+  if (state.phase === "need_refund") {
+    await sendAnswer(refundTextAnswer(value));
+  } else if (state.actions.includes("answer_household")) {
     await sendAnswer(value);
   } else {
     await sendMessage(value);
@@ -186,11 +188,17 @@ function renderState(response) {
   setGroupVisibility(elements.groups.digitalAssets, hasAnyAction(["yes", "no"]));
   setGroupVisibility(elements.groups.refund, hasAnyAction(["paper_check", "direct_deposit"]));
 
-  const showTextInput = state.actions.includes("answer_household") || !response.actions?.length;
+  const showTextInput = state.actions.includes("answer_household")
+    || state.phase === "need_refund"
+    || !response.actions?.length;
   elements.chatForm.hidden = response.phase === "complete" || !showTextInput;
-  elements.messageInput.placeholder = state.actions.includes("answer_household")
-    ? "Type household details"
-    : "Message";
+  if (state.actions.includes("answer_household")) {
+    elements.messageInput.placeholder = "Type household details";
+  } else if (state.phase === "need_refund") {
+    elements.messageInput.placeholder = "Type paper check or fake direct deposit details";
+  } else {
+    elements.messageInput.placeholder = "Message";
+  }
 }
 
 function setGroupVisibility(group, visible) {
@@ -211,14 +219,26 @@ function answerValue(rawAnswer) {
     return false;
   }
   if (rawAnswer === "direct_deposit") {
-    return {
-      method: "direct_deposit",
-      routing_number: "000000000",
-      account_number: "000000000000",
-      account_type: "checking",
-    };
+    return fakeDirectDepositAnswer();
   }
   return rawAnswer;
+}
+
+function refundTextAnswer(value) {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("direct deposit") || normalized.includes("routing") || normalized.includes("account")) {
+    return fakeDirectDepositAnswer();
+  }
+  return "paper_check";
+}
+
+function fakeDirectDepositAnswer() {
+  return {
+    method: "direct_deposit",
+    routing_number: "000000000",
+    account_number: "000000000000",
+    account_type: "checking",
+  };
 }
 
 function appendMessage(role, text) {

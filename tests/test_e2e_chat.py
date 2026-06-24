@@ -34,6 +34,21 @@ def test_chat_shell_exposes_minimal_web_chat_controls(tmp_path, monkeypatch):
     assert 'id="events"' in html
 
 
+def test_chat_client_supports_refund_text_details(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAX_ASSISTANT_DB_PATH", str(tmp_path / "tax_assistant.sqlite3"))
+    monkeypatch.setenv("TAX_ASSISTANT_GENERATED_DIR", str(tmp_path / "generated"))
+    client = TestClient(app)
+
+    response = client.get("/static/app.js")
+
+    assert response.status_code == 200
+    script = response.text
+    assert 'state.phase === "need_refund"' in script
+    assert "Type paper check or fake direct deposit details" in script
+    assert "refundTextAnswer(value)" in script
+    assert 'rawAnswer === "direct_deposit"' in script
+
+
 def test_sample_w2_chat_flow_completes_with_download_and_observations(tmp_path, monkeypatch):
     monkeypatch.setenv("TAX_ASSISTANT_DB_PATH", str(tmp_path / "tax_assistant.sqlite3"))
     monkeypatch.setenv("TAX_ASSISTANT_GENERATED_DIR", str(tmp_path / "generated"))
