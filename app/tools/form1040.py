@@ -6,14 +6,16 @@ import re
 
 from pydantic import BaseModel
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import BooleanObject, NameObject, TextStringObject
 from reportlab.pdfgen import canvas
 
 from app.tools.tax_2025 import TaxReturnSummary
 from app.tools.w2_parser import W2Data
 
 
-BASE_FORM_PATH = Path("assets/forms/f1040-2025.pdf")
-DEFAULT_GENERATED_DIR = Path("var/generated")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+BASE_FORM_PATH = REPO_ROOT / "assets/forms/f1040-2025.pdf"
+DEFAULT_GENERATED_DIR = REPO_ROOT / "var/generated"
 
 
 class TaxpayerInfo(BaseModel):
@@ -48,35 +50,132 @@ def generate_1040_pdf(
     destination_dir.mkdir(parents=True, exist_ok=True)
     output_path = destination_dir / f"completed-1040-2025-{_slug(taxpayer_info.name)}.pdf"
 
-    reader = PdfReader(str(base_path))
-    writer = PdfWriter()
+    writer = PdfWriter(clone_from=str(base_path))
+    _set_need_appearances(writer)
+    _fill_form_fields(writer, taxpayer_info, filing_status, digital_assets, refund, w2, summary)
 
     page1_overlay = _create_page1_overlay(
-        reader.pages[0],
+        writer.pages[0],
         taxpayer_info,
         filing_status,
         digital_assets,
         w2,
         summary,
     )
-    writer.add_page(reader.pages[0])
     writer.pages[0].merge_page(page1_overlay.pages[0])
 
-    if len(reader.pages) > 1:
-        page2_overlay = _create_page2_overlay(reader.pages[1], refund, summary)
-        writer.add_page(reader.pages[1])
+    if len(writer.pages) > 1:
+        page2_overlay = _create_page2_overlay(writer.pages[1], refund, summary)
         writer.pages[1].merge_page(page2_overlay.pages[0])
-
-    for page in reader.pages[2:]:
-        writer.add_page(page)
-
-    summary_page = _create_extractable_summary_page(taxpayer_info, filing_status, digital_assets, refund, w2, summary)
-    writer.add_page(summary_page.pages[0])
 
     with output_path.open("wb") as output_file:
         writer.write(output_file)
 
     return output_path
+
+
+def _fill_form_fields(
+    writer: PdfWriter,
+    taxpayer: TaxpayerInfo,
+    filing_status: str,
+    digital_assets: bool,
+    refund: RefundChoice,
+    w2: Union[W2Data, Mapping[str, object]],
+    summary: Union[TaxReturnSummary, Mapping[str, object]],
+) -> None:
+    field_values = {
+        "f1_14[0]": taxpayer.name,
+        "f1_16[0]": taxpayer.ssn,
+        "f1_20[0]": taxpayer.address,
+        "f1_47[0]": _money(_field(w2, "box_1_wages")),
+        "f1_75[0]": _money(_field(summary, "agi")),
+        "f2_01[0]": _money(_field(summary, "agi")),
+        "f2_02[0]": _money(_field(summary, "standard_deduction")),
+        "f2_06[0]": _money(_field(summary, "taxable_income")),
+        "f2_08[0]": _money(_field(summary, "tax")),
+        "f2_16[0]": _money(_field(summary, "tax")),
+        "f2_17[0]": _money(_field(summary, "federal_withholding")),
+        "f2_29[0]": _money(_field(summary, "federal_withholding")),
+        "f2_30[0]": _money(_field(summary, "refund")),
+        "f2_31[0]": _money(_field(summary, "refund")),
+        "f2_35[0]": _money(_field(summary, "amount_owed")),
+    }
+
+    if _refund_method(refund) == "direct_deposit":
+        field_values["f2_32[0]"] = refund.routing_number or ""
+        field_values["f2_33[0]"] = refund.account_number or ""
+
+    for page in writer.pages:
+        for annot in _page_annotations(page):
+            name = str(annot.get("/T") or "")
+            if name in field_values:
+                _set_text_annotation(annot, field_values[name])
+
+    _check_box(writer.pages[0], *_filing_status_checkbox(filing_status))
+    _check_box(writer.pages[0], "c1_10[0]" if digital_assets else "c1_10[1]")
+    if _refund_method(refund) == "direct_deposit":
+        account_type = (refund.account_type or "").strip().lower()
+        if account_type == "checking":
+            _check_box(writer.pages[1], "c2_16[0]")
+        elif account_type == "savings":
+            _check_box(writer.pages[1], "c2_16[1]")
+
+
+def _set_need_appearances(writer: PdfWriter) -> None:
+    if "/AcroForm" not in writer._root_object:
+        return
+    writer._root_object["/AcroForm"][NameObject("/NeedAppearances")] = BooleanObject(True)
+
+
+def _page_annotations(page: Any) -> list:
+    annotations = []
+    for annot_ref in page.get("/Annots") or []:
+        annotations.append(annot_ref.get_object())
+    return annotations
+
+
+def _set_text_annotation(annot: Any, value: str) -> None:
+    text = TextStringObject(str(value))
+    annot[NameObject("/V")] = text
+    annot[NameObject("/DV")] = text
+
+
+def _check_box(page: Any, field_name: str, rect: Optional[tuple] = None) -> None:
+    for annot in _page_annotations(page):
+        if annot.get("/FT") != "/Btn":
+            continue
+        if str(annot.get("/T") or "") != field_name:
+            continue
+        if rect is not None and _rect_tuple(annot.get("/Rect")) != rect:
+            continue
+        state = _checked_state(annot)
+        annot[NameObject("/V")] = NameObject(state)
+        annot[NameObject("/AS")] = NameObject(state)
+        return
+
+
+def _checked_state(annot: Any) -> str:
+    normal_appearance = (annot.get("/AP") or {}).get("/N")
+    if hasattr(normal_appearance, "keys"):
+        for state in normal_appearance.keys():
+            state_name = str(state)
+            if state_name != "/Off":
+                return state_name
+    return "/Yes"
+
+
+def _filing_status_checkbox(filing_status: str) -> tuple:
+    checkboxes = {
+        "single": ("c1_8[0]", (97.599, 578.0, 105.599, 586.0)),
+        "married_filing_jointly": ("c1_8[1]", (97.599, 566.001, 105.599, 574.001)),
+        "married_filing_separately": ("c1_8[2]", (97.599, 554.002, 105.599, 562.002)),
+        "head_of_household": ("c1_8[0]", (349.599, 578.0, 357.599, 586.0)),
+    }
+    return checkboxes[_normalize_status(filing_status)]
+
+
+def _rect_tuple(rect: Any) -> tuple:
+    return tuple(round(float(value), 3) for value in rect)
 
 
 def _create_page1_overlay(
@@ -114,31 +213,6 @@ def _create_page2_overlay(
     _draw_page2_money_values(c, refund, summary)
     c.save()
 
-    packet.seek(0)
-    return PdfReader(packet)
-
-
-def _create_extractable_summary_page(
-    taxpayer: TaxpayerInfo,
-    filing_status: str,
-    digital_assets: bool,
-    refund: RefundChoice,
-    w2: Union[W2Data, Mapping[str, object]],
-    summary: Union[TaxReturnSummary, Mapping[str, object]],
-) -> PdfReader:
-    packet = BytesIO()
-    c = canvas.Canvas(packet, pagesize=(612, 792))
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, 742, "Completed 2025 Form 1040 Values")
-    c.setFont("Helvetica", 11)
-
-    lines = _completed_value_lines(taxpayer, filing_status, digital_assets, refund, w2, summary)
-    y = 710
-    for line in lines:
-        c.drawString(50, y, line)
-        y -= 22
-
-    c.save()
     packet.seek(0)
     return PdfReader(packet)
 
@@ -187,53 +261,16 @@ def _draw_page2_money_values(
     c.drawRightString(596, 224, _money(_field(summary, "amount_owed")))
 
     if _refund_method(refund) == "direct_deposit":
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(210, 764, f"Refund choice Direct deposit - Routing {refund.routing_number or ''}")
+        c.setFont("Helvetica", 8)
         c.drawString(186, 274, refund.routing_number or "")
         c.drawString(186, 260, refund.account_number or "")
-        if (refund.account_type or "").strip().lower() == "checking":
-            _draw_check(c, 392, 273)
-        elif (refund.account_type or "").strip().lower() == "savings":
-            _draw_check(c, 452, 273)
-
-
-def _completed_value_lines(
-    taxpayer: TaxpayerInfo,
-    filing_status: str,
-    digital_assets: bool,
-    refund: RefundChoice,
-    w2: Union[W2Data, Mapping[str, object]],
-    summary: Union[TaxReturnSummary, Mapping[str, object]],
-) -> list:
-    lines = [
-        f"Taxpayer {taxpayer.name}",
-        f"SSN {taxpayer.ssn}",
-        f"Address {taxpayer.address}",
-        f"Filing status {_status_label(filing_status)}",
-        f"Digital assets {'Yes' if digital_assets else 'No'}",
-        f"Wages {_money(_field(summary, 'wages'))}",
-        f"AGI {_money(_field(summary, 'agi'))}",
-        f"Standard deduction {_money(_field(summary, 'standard_deduction'))}",
-        f"Taxable income {_money(_field(summary, 'taxable_income'))}",
-        f"Tax {_money(_field(summary, 'tax'))}",
-        f"Withholding {_money(_field(summary, 'federal_withholding'))}",
-        f"Refund {_money(_field(summary, 'refund'))}",
-        f"Amount owed {_money(_field(summary, 'amount_owed'))}",
-        f"W-2 Box 1 {_money(_field(w2, 'box_1_wages'))}",
-        f"W-2 Box 2 {_money(_field(w2, 'federal_income_tax_withheld'))}",
-    ]
-
-    if _refund_method(refund) == "direct_deposit":
-        lines.extend(
-            [
-                "Refund delivery Direct deposit",
-                f"Routing {refund.routing_number or ''}",
-                f"Account {refund.account_number or ''}",
-                f"Type {_account_type_label(refund.account_type)}",
-            ]
-        )
     else:
-        lines.append("Refund delivery Paper check")
-
-    return lines
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(210, 764, "Refund choice Paper check")
+        c.setFont("Helvetica", 8)
+        c.drawString(74, 224, f"Amount owed {_money(_field(summary, 'amount_owed'))}")
 
 
 def _draw_status_marks(c: canvas.Canvas, filing_status: str, digital_assets: bool) -> None:
@@ -259,8 +296,11 @@ def _draw_check(c: canvas.Canvas, x: float, y: float) -> None:
 
 def _generated_dir(output_dir: Optional[Union[str, Path]]) -> Path:
     if output_dir is not None:
-        return Path(output_dir)
-    return Path(os.environ.get("TAX_ASSISTANT_GENERATED_DIR", DEFAULT_GENERATED_DIR))
+        return Path(output_dir).expanduser().resolve()
+    configured_dir = os.environ.get("TAX_ASSISTANT_GENERATED_DIR")
+    if configured_dir:
+        return Path(configured_dir).expanduser().resolve()
+    return DEFAULT_GENERATED_DIR.resolve()
 
 
 def _coerce_model(model: Any, value: Union[BaseModel, Mapping[str, object]]) -> Any:
@@ -285,26 +325,10 @@ def _normalize_status(status: str) -> str:
     return status.strip().lower().replace(" ", "_")
 
 
-def _status_label(status: str) -> str:
-    labels = {
-        "single": "Single",
-        "married_filing_jointly": "Married filing jointly",
-        "married_filing_separately": "Married filing separately",
-        "head_of_household": "Head of household",
-    }
-    return labels.get(_normalize_status(status), status)
-
-
 def _refund_method(refund: RefundChoice) -> str:
     return refund.method.strip().lower().replace(" ", "_")
 
 
-def _account_type_label(account_type: Optional[str]) -> str:
-    if not account_type:
-        return ""
-    return account_type.strip().title()
-
-
 def _slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return slug or "taxpayer"
+    return (slug or "taxpayer")[:80]

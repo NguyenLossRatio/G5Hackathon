@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Optional, Union
 from urllib.error import URLError
 from urllib.request import urlopen
+import argparse
 import shutil
 
 import pdfplumber
@@ -12,40 +13,57 @@ from reportlab.pdfgen import canvas
 
 
 IRS_FORM_1040_URL = "https://www.irs.gov/pub/irs-pdf/f1040.pdf"
-FORM_1040_PATH = Path("assets/forms/f1040-2025.pdf")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FORM_1040_PATH = REPO_ROOT / "assets/forms/f1040-2025.pdf"
 
 
 def fetch_form_1040(
     output_path: Union[str, Path] = FORM_1040_PATH,
     source_path: Optional[Union[str, Path]] = None,
     url: str = IRS_FORM_1040_URL,
+    allow_prototype: bool = False,
 ) -> Path:
     """Fetch or copy the 2025 Form 1040 base PDF.
 
     The IRS URL is intentionally only used when this function is called; importing
-    this module never performs network I/O. If the official 2025 PDF is not
-    available, the fallback prototype base is generated so the hackathon can keep
-    producing readable 1040-style PDFs. Replace that fallback with the official
-    IRS asset when it becomes available.
+    this module never performs network I/O. Prototype fallback generation is
+    explicit: pass allow_prototype=True only for local hackathon development when
+    the official IRS 2025 asset is unavailable. Replace that fallback with the
+    official IRS asset before committing production assets.
     """
 
-    path = Path(output_path)
+    path = Path(output_path).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if source_path is not None:
-        shutil.copyfile(Path(source_path), path)
-        if _looks_like_2025_form_1040(path):
+        source = Path(source_path).expanduser().resolve()
+        if _looks_like_2025_form_1040(source):
+            shutil.copyfile(source, path)
             return path
-        _create_fallback_1040(path)
-        return path
+        return _handle_unavailable_form(path, allow_prototype)
 
+    downloaded_path = path.with_name(f"{path.name}.download")
     try:
         with urlopen(url, timeout=20) as response:
-            path.write_bytes(response.read())
-        if _looks_like_2025_form_1040(path):
+            downloaded_path.write_bytes(response.read())
+        if _looks_like_2025_form_1040(downloaded_path):
+            downloaded_path.replace(path)
             return path
     except (OSError, URLError):
         pass
+    finally:
+        if downloaded_path.exists():
+            downloaded_path.unlink()
+
+    return _handle_unavailable_form(path, allow_prototype)
+
+
+def _handle_unavailable_form(path: Path, allow_prototype: bool) -> Path:
+    if not allow_prototype:
+        raise RuntimeError(
+            "Official 2025 Form 1040 PDF was not available. "
+            "Pass allow_prototype=True to create the prototype fallback explicitly."
+        )
 
     _create_fallback_1040(path)
     return path
@@ -98,5 +116,24 @@ def _create_fallback_1040(path: Path) -> None:
     c.save()
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Fetch the IRS 2025 Form 1040 PDF asset.")
+    parser.add_argument("--output", default=str(FORM_1040_PATH), help="Destination PDF path.")
+    parser.add_argument("--source", help="Local PDF to validate and copy instead of downloading.")
+    parser.add_argument("--url", default=IRS_FORM_1040_URL, help="IRS PDF URL.")
+    parser.add_argument(
+        "--allow-prototype",
+        action="store_true",
+        help="Create a visible prototype fallback if the official 2025 form is unavailable.",
+    )
+    args = parser.parse_args()
+    fetch_form_1040(
+        output_path=args.output,
+        source_path=args.source,
+        url=args.url,
+        allow_prototype=args.allow_prototype,
+    )
+
+
 if __name__ == "__main__":
-    fetch_form_1040()
+    main()
