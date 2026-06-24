@@ -51,7 +51,9 @@ def upload_w2(session_id: str, pdf_path: Path) -> Dict[str, Any]:
         return _response(session, messages.refusal_message(exc.code))
 
     session.w2 = w2_data
-    _ask_question(session, "need_filing_status")
+    budget_response = _ask_required_question(session, "need_filing_status")
+    if budget_response is not None:
+        return budget_response
     db.save_session(session)
     return _response(session, messages.filing_status_question())
 
@@ -111,23 +113,30 @@ def resolve_download(download_id: str) -> Path:
 
 def _handle_filing_status(session: TaxSession, value: Any) -> Dict[str, Any]:
     filing_status = validate_filing_status(str(value or ""))
+    budget_response = _ask_required_question(session, "need_household")
+    if budget_response is not None:
+        return budget_response
     session.answers["filing_status"] = filing_status
-    _ask_question(session, "need_household")
     db.save_session(session)
     return _response(session, messages.household_question())
 
 
 def _handle_household(session: TaxSession, value: Any) -> Dict[str, Any]:
-    session.answers["household"] = str(value or "").strip()
-    _ask_question(session, "need_digital_assets")
+    household = str(value or "").strip()
+    budget_response = _ask_required_question(session, "need_digital_assets")
+    if budget_response is not None:
+        return budget_response
+    session.answers["household"] = household
     db.save_session(session)
     return _response(session, messages.digital_assets_question())
 
 
 def _handle_digital_assets(session: TaxSession, value: Any) -> Dict[str, Any]:
     digital_assets = validate_digital_assets(_coerce_bool(value))
+    budget_response = _ask_required_question(session, "need_refund")
+    if budget_response is not None:
+        return budget_response
     session.answers["digital_assets"] = digital_assets
-    _ask_question(session, "need_refund")
     db.save_session(session)
     return _response(session, messages.refund_question())
 
@@ -177,11 +186,14 @@ def _prepare_return(session: TaxSession) -> None:
         "address": session.w2["employee_address"],
     }
     refund_choice = _form_refund_choice(session.answers["refund_choice"])
+    download_id = f"{session.session_id}.{uuid4().hex}"
+    output_dir = _generated_dir() / session.session_id / download_id
     record_event(
         session.session_id,
         "form_generation_started",
         {
             "input_summary": {
+                "download_id": download_id,
                 "filing_status": filing_status,
                 "digital_assets": session.answers.get("digital_assets"),
                 "refund_method": refund_choice["method"],
@@ -196,6 +208,8 @@ def _prepare_return(session: TaxSession) -> None:
             refund_choice=refund_choice,
             w2=session.w2,
             summary=summary_data,
+            output_dir=output_dir,
+            output_filename="completed-1040-2025.pdf",
         )
     except Exception as exc:
         record_event(
@@ -208,7 +222,6 @@ def _prepare_return(session: TaxSession) -> None:
         )
         raise
 
-    download_id = f"{session.session_id}.{uuid4().hex}"
     session.download_id = download_id
     session.answers["download_path"] = str(pdf_path.resolve())
     _transition_to(session, "complete")
@@ -263,25 +276,38 @@ def _response(session: TaxSession, message: str) -> Dict[str, Any]:
     return payload
 
 
+def _ask_required_question(session: TaxSession, next_phase: Phase) -> Optional[Dict[str, Any]]:
+    try:
+        _ask_question(session, next_phase)
+    except QuestionBudgetExceeded as exc:
+        return _budget_response(session, exc)
+    return None
+
+
 def _retry_response(session: TaxSession) -> Dict[str, Any]:
     try:
         _ask_question(session, session.phase)
         message = messages.retry_message(session.phase)
     except QuestionBudgetExceeded as exc:
-        record_event(
-            session.session_id,
-            "question_budget_exceeded",
-            {
-                "input_summary": {
-                    "phase": session.phase,
-                    "question_count": session.question_count,
-                },
-                "failure_summary": {"error": str(exc)},
-            },
-        )
-        message = messages.question_budget_message()
+        return _budget_response(session, exc)
     db.save_session(session)
     return _response(session, message)
+
+
+def _budget_response(session: TaxSession, exc: QuestionBudgetExceeded) -> Dict[str, Any]:
+    record_event(
+        session.session_id,
+        "question_budget_exceeded",
+        {
+            "input_summary": {
+                "phase": session.phase,
+                "question_count": session.question_count,
+            },
+            "failure_summary": {"error": str(exc)},
+        },
+    )
+    db.save_session(session)
+    return _response(session, messages.question_budget_message())
 
 
 def _actions_for_phase(phase: str) -> list:

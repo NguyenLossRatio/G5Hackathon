@@ -39,6 +39,7 @@ def generate_1040_pdf(
     w2: Union[W2Data, Mapping[str, object]],
     summary: Union[TaxReturnSummary, Mapping[str, object]],
     output_dir: Optional[Union[str, Path]] = None,
+    output_filename: Optional[str] = None,
 ) -> Path:
     taxpayer_info = _coerce_model(TaxpayerInfo, taxpayer)
     refund = _coerce_model(RefundChoice, refund_choice)
@@ -48,7 +49,7 @@ def generate_1040_pdf(
 
     destination_dir = _generated_dir(output_dir)
     destination_dir.mkdir(parents=True, exist_ok=True)
-    output_path = destination_dir / f"completed-1040-2025-{_slug(taxpayer_info.name)}.pdf"
+    output_path = destination_dir / _output_filename(taxpayer_info.name, output_filename)
 
     writer = PdfWriter(clone_from=str(base_path))
     _set_need_appearances(writer)
@@ -301,6 +302,15 @@ def _generated_dir(output_dir: Optional[Union[str, Path]]) -> Path:
     if configured_dir:
         return Path(configured_dir).expanduser().resolve()
     return DEFAULT_GENERATED_DIR.resolve()
+
+
+def _output_filename(taxpayer_name: str, output_filename: Optional[str]) -> str:
+    if output_filename:
+        name = Path(output_filename).name
+        if Path(name).suffix.lower() != ".pdf":
+            name = f"{name}.pdf"
+        return name
+    return f"completed-1040-2025-{_slug(taxpayer_name)}.pdf"
 
 
 def _coerce_model(model: Any, value: Union[BaseModel, Mapping[str, object]]) -> Any:

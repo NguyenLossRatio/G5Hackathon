@@ -213,3 +213,59 @@ def test_form_generation_failure_event_uses_failure_summary(tmp_path, monkeypatc
     ][0]
     assert set(failed["payload"]) == {"input_summary", "failure_summary"}
     assert failed["payload"]["failure_summary"] == {"error": "forced form failure"}
+
+
+def test_generated_pdfs_for_same_taxpayer_do_not_overwrite_previous_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAX_ASSISTANT_DB_PATH", str(tmp_path / "tax_assistant.sqlite3"))
+    monkeypatch.setenv("TAX_ASSISTANT_GENERATED_DIR", str(tmp_path / "generated"))
+
+    first = _complete_session(digital_assets=False)
+    first_session = db.load_session(first["session_id"])
+    first_path = Path(first_session.answers["download_path"])
+    first_bytes = first_path.read_bytes()
+
+    second = _complete_session(digital_assets=True)
+    second_session = db.load_session(second["session_id"])
+    second_path = Path(second_session.answers["download_path"])
+
+    assert first_path != second_path
+    assert first_path.exists()
+    assert second_path.exists()
+    assert first_path.read_bytes() == first_bytes
+    assert first_path.read_bytes() != second_path.read_bytes()
+
+
+def test_valid_answer_at_question_budget_limit_returns_bounded_response(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAX_ASSISTANT_DB_PATH", str(tmp_path / "tax_assistant.sqlite3"))
+    session = TaxSession(
+        session_id="sess-valid-budget",
+        phase="need_filing_status",
+        question_count=5,
+        w2={
+            "tax_year": 2025,
+            "is_fake": True,
+            "document_count": 1,
+            "box_1_wages": 40_000,
+            "federal_income_tax_withheld": 3_200,
+            "box_3_social_security_wages": 40_000,
+        },
+    )
+    db.save_session(session)
+
+    response = handle_message("sess-valid-budget", answer="single")
+
+    assert response["phase"] == "need_filing_status"
+    assert response["question_count"] == 5
+    assert "question limit" in response["message"].lower()
+    saved = db.load_session("sess-valid-budget")
+    assert saved.phase == "need_filing_status"
+    assert saved.answers == {}
+
+
+def _complete_session(digital_assets):
+    started = start_session()
+    upload_w2(started["session_id"], SAMPLE_W2_PATH)
+    handle_message(started["session_id"], answer="single")
+    handle_message(started["session_id"], answer="No dependents")
+    handle_message(started["session_id"], answer=digital_assets)
+    return handle_message(started["session_id"], answer={"method": "paper_check"})
