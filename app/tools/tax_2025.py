@@ -1,9 +1,9 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Dict, Mapping, Tuple, Union
 
 from pydantic import BaseModel
 
-from app.guardrails.policy import validate_filing_status
+from app.guardrails.policy import GuardrailViolation, validate_filing_status
 from app.tools.w2_parser import W2Data
 
 
@@ -61,6 +61,7 @@ TAX_BRACKETS: Dict[FilingStatus, Tuple[Bracket, ...]] = {
         (Decimal("626350"), Decimal("0.37")),
     ),
 }
+
 
 class TaxReturnSummary(BaseModel):
     filing_status: str
@@ -128,4 +129,14 @@ def _whole_dollars(value: object) -> int:
 
 
 def _decimal(value: object) -> Decimal:
-    return Decimal(str(value))
+    if isinstance(value, bool):
+        raise GuardrailViolation("Tax input must be a finite number.", "invalid_tax_number")
+
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise GuardrailViolation("Tax input must be a finite number.", "invalid_tax_number")
+
+    if not number.is_finite():
+        raise GuardrailViolation("Tax input must be a finite number.", "invalid_tax_number")
+    return number

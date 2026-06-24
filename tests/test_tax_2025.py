@@ -1,8 +1,50 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 import pytest
 
 from app.guardrails.policy import GuardrailViolation
 from app.tools.tax_2025 import calculate_tax, calculate_tax_return
 from app.tools.w2_parser import W2Data
+
+
+TEST_BRACKETS = {
+    "single": (
+        (11_925, "0.10"),
+        (48_475, "0.12"),
+        (103_350, "0.22"),
+        (197_300, "0.24"),
+        (250_525, "0.32"),
+        (626_350, "0.35"),
+        (None, "0.37"),
+    ),
+    "married_filing_jointly": (
+        (23_850, "0.10"),
+        (96_950, "0.12"),
+        (206_700, "0.22"),
+        (394_600, "0.24"),
+        (501_050, "0.32"),
+        (751_600, "0.35"),
+        (None, "0.37"),
+    ),
+    "married_filing_separately": (
+        (11_925, "0.10"),
+        (48_475, "0.12"),
+        (103_350, "0.22"),
+        (197_300, "0.24"),
+        (250_525, "0.32"),
+        (375_800, "0.35"),
+        (None, "0.37"),
+    ),
+    "head_of_household": (
+        (17_000, "0.10"),
+        (64_850, "0.12"),
+        (103_350, "0.22"),
+        (197_300, "0.24"),
+        (250_500, "0.32"),
+        (626_350, "0.35"),
+        (None, "0.37"),
+    ),
+}
 
 
 def make_w2(**overrides):
@@ -31,6 +73,23 @@ def summary_dict(summary):
     if hasattr(summary, "model_dump"):
         return summary.model_dump()
     return summary.dict()
+
+
+def expected_tax_from_upper_limits(taxable_income, status):
+    remaining = Decimal(str(taxable_income))
+    lower_limit = Decimal("0")
+    tax = Decimal("0")
+
+    for upper_limit, rate in TEST_BRACKETS[status]:
+        if remaining <= 0:
+            break
+        ceiling = remaining if upper_limit is None else min(remaining, Decimal(str(upper_limit)) - lower_limit)
+        tax += ceiling * Decimal(rate)
+        remaining -= ceiling
+        if upper_limit is not None:
+            lower_limit = Decimal(str(upper_limit))
+
+    return int(tax.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def test_calculate_tax_return_for_single_sample_w2():
@@ -86,6 +145,68 @@ def test_calculate_tax_uses_single_second_marginal_bracket():
     assert calculate_tax(11_925, "single") == 1_193
     assert calculate_tax(12_000, "single") == 1_202
     assert calculate_tax(24_250, "single") == 2_672
+
+
+@pytest.mark.parametrize(
+    "status,taxable_income,explicit_expected",
+    [
+        ("married_filing_jointly", 23_850, 2_385),
+        ("married_filing_jointly", 23_851, 2_385),
+        ("married_filing_jointly", 96_950, 11_157),
+        ("married_filing_jointly", 96_951, 11_157),
+        ("married_filing_separately", 375_800, None),
+        ("married_filing_separately", 375_801, None),
+        ("head_of_household", 17_000, None),
+        ("head_of_household", 64_850, None),
+        ("head_of_household", 250_500, None),
+        ("head_of_household", 626_350, None),
+    ],
+)
+def test_calculate_tax_matches_bracket_boundaries_for_supported_statuses(
+    status,
+    taxable_income,
+    explicit_expected,
+):
+    expected = explicit_expected
+    if expected is None:
+        expected = expected_tax_from_upper_limits(taxable_income, status)
+
+    assert calculate_tax(taxable_income, status) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf"), True, None, "not-a-number"],
+)
+def test_calculate_tax_rejects_invalid_numeric_inputs(value):
+    with pytest.raises(GuardrailViolation) as excinfo:
+        calculate_tax(value, "single")
+
+    assert excinfo.value.message == "Tax input must be a finite number."
+    assert excinfo.value.code == "invalid_tax_number"
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["box_1_wages", "federal_income_tax_withheld"],
+)
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf"), True, None, "not-a-number"],
+)
+def test_calculate_tax_return_rejects_invalid_w2_numeric_inputs(field, value):
+    with pytest.raises(GuardrailViolation) as excinfo:
+        calculate_tax_return(
+            {
+                "box_1_wages": 40_000,
+                "federal_income_tax_withheld": 3_200,
+                field: value,
+            },
+            "single",
+        )
+
+    assert excinfo.value.message == "Tax input must be a finite number."
+    assert excinfo.value.code == "invalid_tax_number"
 
 
 def test_calculate_tax_returns_zero_for_no_taxable_income():
