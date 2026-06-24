@@ -27,6 +27,23 @@ python -m venv .venv
 
 Then open `http://127.0.0.1:8000`.
 
+## Render Deployment
+
+Live URL: `TBD`
+
+Deployment is not live yet. After creating a Render account and connecting this
+repository, create a new Blueprint deployment from `render.yaml`. The service
+uses:
+
+- Build command: `pip install -r requirements.txt`
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Generated PDF directory: `/tmp/tax-assistant-generated`
+- SQLite database path: `/tmp/tax-assistant.sqlite3`
+
+Render free web services have an ephemeral filesystem. Generated PDFs and the
+SQLite database stored under `/tmp` can be removed when the service restarts or
+is redeployed, which is acceptable for this hackathon demo.
+
 ## Demo Flow
 
 Use the fake W-2 at `assets/sample/sample-w2-2025.pdf`, or choose the in-app
@@ -41,6 +58,3 @@ Expected flow:
 5. Answer the digital assets question.
 6. Choose paper check or fake direct deposit.
 7. Download the generated demo Form 1040 PDF and review the observation trail.
-
-Deployment is not live yet. The Render setup and URL placeholder are planned for
-Task 10.

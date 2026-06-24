@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: tax-filing-assistant
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: TAX_ASSISTANT_GENERATED_DIR
+        value: /tmp/tax-assistant-generated
+      - key: TAX_ASSISTANT_DB_PATH
+        value: /tmp/tax-assistant.sqlite3
