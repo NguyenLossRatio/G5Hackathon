@@ -16,6 +16,8 @@ from app.guardrails.policy import (
         "Use one fake W-2 for tax year 2025 to prepare a federal Form 1040 demo.",
         "Show me tax year 2025 federal Form 1040 demo",
         "withholding or tax withheld",
+        "withholding OR tax withheld",
+        "wages OR tax withheld",
     ],
 )
 def test_scope_accepts_in_scope_demo_messages(message):
@@ -45,6 +47,7 @@ def test_scope_accepts_in_scope_demo_messages(message):
         ("Can you prepare my state income tax return?", "state_return"),
         ("Can you do my state income taxes?", "state_return"),
         ("Prepare my NY tax return.", "state_return"),
+        ("Prepare my OR state return.", "state_return"),
         ("My DOB is 01/02/1990.", "real_identity_data"),
         ("Use my actual name Alan Smith.", "real_identity_data"),
         ("Use my address 742 Evergreen Terrace.", "real_identity_data"),

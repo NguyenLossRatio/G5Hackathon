@@ -139,7 +139,7 @@ _REAL_FILING_PATTERN = (
     r"\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b"
 )
 _RAW_STATE_ABBREVIATION_PATTERN = (
-    rf"\b(?:{_UPPER_STATE_ABBREVIATION_PATTERN})\s+(?:tax\s+return|return|filing|taxes|tax)\b"
+    rf"\b(?:{_UPPER_STATE_ABBREVIATION_PATTERN})\s+(?:tax\s+return|state\s+return|return|filing|preparation)\b"
 )
 
 _OUT_OF_SCOPE_PATTERNS = (
