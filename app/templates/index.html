@@ -10,14 +10,52 @@
     <main id="chat-root" class="chat-shell">
       <section class="chat-panel" aria-label="Tax filing chat">
         <header class="chat-header">
-          <h1>Tax Filing Assistant</h1>
+          <div>
+            <h1>Tax Filing Assistant</h1>
+            <p id="phase-label" class="phase-label">Starting session</p>
+          </div>
+          <p id="question-counter" class="question-counter">Question 0 of 5</p>
         </header>
-        <div id="messages" class="messages" aria-live="polite"></div>
-        <form id="chat-form" class="chat-form">
-          <input id="message-input" name="message" type="text" autocomplete="off" placeholder="Message">
-          <button type="submit">Send</button>
-        </form>
+        <div id="messages" class="messages" aria-live="polite" aria-label="Conversation"></div>
+        <div class="controls" aria-label="Chat controls">
+          <div id="w2-actions" class="control-group">
+            <button id="sample-w2-button" type="button">Use sample W-2</button>
+            <label class="upload-label" for="w2-upload">Upload W-2 PDF</label>
+            <input id="w2-upload" name="file" type="file" accept="application/pdf">
+          </div>
+
+          <div id="filing-status-actions" class="control-group chip-group" aria-label="Filing status">
+            <button type="button" data-answer="single">Single</button>
+            <button type="button" data-answer="married_filing_jointly">Married filing jointly</button>
+            <button type="button" data-answer="married_filing_separately">Married filing separately</button>
+            <button type="button" data-answer="head_of_household">Head of household</button>
+          </div>
+
+          <div id="digital-assets-actions" class="control-group chip-group" aria-label="Digital assets">
+            <button type="button" data-answer="true">Yes</button>
+            <button type="button" data-answer="false">No</button>
+          </div>
+
+          <div id="refund-actions" class="control-group chip-group" aria-label="Refund method">
+            <button type="button" data-answer="paper_check">Paper check</button>
+            <button type="button" data-answer="direct_deposit">Direct deposit</button>
+          </div>
+
+          <form id="chat-form" class="chat-form">
+            <input id="message-input" name="message" type="text" autocomplete="off" placeholder="Type household details">
+            <button type="submit">Send</button>
+          </form>
+
+          <a id="download-link" class="download-link" href="#" hidden>Download completed PDF</a>
+          <p id="status-message" class="status-message" role="status" aria-live="polite"></p>
+        </div>
       </section>
+      <aside class="observation-panel" aria-label="Observation trail">
+        <header class="observation-header">
+          <h2>Observation Trail</h2>
+        </header>
+        <ol id="events" class="events"></ol>
+      </aside>
     </main>
     <script src="/static/app.js"></script>
   </body>

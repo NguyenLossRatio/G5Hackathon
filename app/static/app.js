@@ -1,18 +1,299 @@
-const form = document.querySelector("#chat-form");
-const input = document.querySelector("#message-input");
-const messages = document.querySelector("#messages");
+const state = {
+  sessionId: null,
+  phase: "start",
+  actions: [],
+  busy: false,
+};
 
-form?.addEventListener("submit", (event) => {
+const elements = {
+  messages: document.querySelector("#messages"),
+  phaseLabel: document.querySelector("#phase-label"),
+  questionCounter: document.querySelector("#question-counter"),
+  status: document.querySelector("#status-message"),
+  sampleButton: document.querySelector("#sample-w2-button"),
+  uploadInput: document.querySelector("#w2-upload"),
+  chatForm: document.querySelector("#chat-form"),
+  messageInput: document.querySelector("#message-input"),
+  downloadLink: document.querySelector("#download-link"),
+  events: document.querySelector("#events"),
+  groups: {
+    w2: document.querySelector("#w2-actions"),
+    filingStatus: document.querySelector("#filing-status-actions"),
+    digitalAssets: document.querySelector("#digital-assets-actions"),
+    refund: document.querySelector("#refund-actions"),
+  },
+};
+
+const phaseLabels = {
+  start: "Starting session",
+  need_w2: "W-2 intake",
+  need_filing_status: "Filing status",
+  need_household: "Household details",
+  need_digital_assets: "Digital assets",
+  need_refund: "Refund method",
+  complete: "Complete",
+};
+
+document.addEventListener("DOMContentLoaded", startChat);
+
+elements.sampleButton?.addEventListener("click", async () => {
+  if (!state.sessionId) {
+    return;
+  }
+  appendMessage("user", "Use sample W-2");
+  await uploadW2({ useSample: true });
+});
+
+elements.uploadInput?.addEventListener("change", async () => {
+  const file = elements.uploadInput.files?.[0];
+  if (!file || !state.sessionId) {
+    return;
+  }
+  appendMessage("user", `Upload ${file.name}`);
+  await uploadW2({ file });
+  elements.uploadInput.value = "";
+});
+
+document.querySelectorAll("[data-answer]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const rawAnswer = button.dataset.answer;
+    const answer = answerValue(rawAnswer);
+    appendMessage("user", button.textContent.trim());
+    await sendAnswer(answer);
+  });
+});
+
+elements.chatForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-
-  const value = input.value.trim();
+  const value = elements.messageInput.value.trim();
   if (!value) {
     return;
   }
-
-  const message = document.createElement("p");
-  message.className = "message";
-  message.textContent = value;
-  messages.append(message);
-  input.value = "";
+  appendMessage("user", value);
+  elements.messageInput.value = "";
+  if (state.actions.includes("answer_household")) {
+    await sendAnswer(value);
+  } else {
+    await sendMessage(value);
+  }
 });
+
+async function startChat() {
+  setBusy(true, "Starting chat...");
+  try {
+    const response = await api("/api/chat/start", { method: "POST" });
+    handleChatResponse(response);
+  } catch (error) {
+    showError(error);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function uploadW2({ useSample = false, file = null }) {
+  setBusy(true, "Reading W-2...");
+  try {
+    const body = new FormData();
+    body.append("session_id", state.sessionId);
+    if (useSample) {
+      body.append("use_sample", "true");
+    } else {
+      body.append("file", file);
+    }
+    const response = await api("/api/chat/upload-w2", { method: "POST", body });
+    handleChatResponse(response);
+  } catch (error) {
+    showError(error);
+    await refreshEvents();
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function sendAnswer(answer) {
+  setBusy(true, "Sending answer...");
+  try {
+    const response = await api("/api/chat/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: state.sessionId, answer }),
+    });
+    handleChatResponse(response);
+  } catch (error) {
+    showError(error);
+    await refreshEvents();
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function sendMessage(message) {
+  setBusy(true, "Sending message...");
+  try {
+    const response = await api("/api/chat/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: state.sessionId, message }),
+    });
+    handleChatResponse(response);
+  } catch (error) {
+    showError(error);
+    await refreshEvents();
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function api(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      message = body.detail || message;
+    } catch {
+      // Keep the HTTP status if the response is not JSON.
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+function handleChatResponse(response) {
+  state.sessionId = response.session_id;
+  state.phase = response.phase;
+  state.actions = response.actions || [];
+  appendMessage("assistant", response.message);
+  renderState(response);
+  refreshEvents();
+}
+
+function renderState(response) {
+  elements.phaseLabel.textContent = phaseLabels[response.phase] || response.phase;
+  elements.questionCounter.textContent = `Question ${response.question_count || 0} of 5`;
+  elements.downloadLink.hidden = !response.download_url;
+  if (response.download_url) {
+    elements.downloadLink.href = response.download_url;
+  }
+
+  setGroupVisibility(elements.groups.w2, hasAnyAction(["upload_w2", "use_sample_w2"]));
+  setGroupVisibility(elements.groups.filingStatus, hasAnyAction([
+    "single",
+    "married_filing_jointly",
+    "married_filing_separately",
+    "head_of_household",
+  ]));
+  setGroupVisibility(elements.groups.digitalAssets, hasAnyAction(["yes", "no"]));
+  setGroupVisibility(elements.groups.refund, hasAnyAction(["paper_check", "direct_deposit"]));
+
+  const showTextInput = state.actions.includes("answer_household") || !response.actions?.length;
+  elements.chatForm.hidden = response.phase === "complete" || !showTextInput;
+  elements.messageInput.placeholder = state.actions.includes("answer_household")
+    ? "Type household details"
+    : "Message";
+}
+
+function setGroupVisibility(group, visible) {
+  if (group) {
+    group.hidden = !visible;
+  }
+}
+
+function hasAnyAction(actions) {
+  return actions.some((action) => state.actions.includes(action));
+}
+
+function answerValue(rawAnswer) {
+  if (rawAnswer === "true") {
+    return true;
+  }
+  if (rawAnswer === "false") {
+    return false;
+  }
+  if (rawAnswer === "direct_deposit") {
+    return {
+      method: "direct_deposit",
+      routing_number: "000000000",
+      account_number: "000000000000",
+      account_type: "checking",
+    };
+  }
+  return rawAnswer;
+}
+
+function appendMessage(role, text) {
+  if (!text) {
+    return;
+  }
+  const message = document.createElement("article");
+  message.className = `message ${role}`;
+  message.textContent = text;
+  elements.messages.append(message);
+  elements.messages.scrollTop = elements.messages.scrollHeight;
+}
+
+async function refreshEvents() {
+  if (!state.sessionId) {
+    return;
+  }
+  try {
+    const response = await fetch(`/api/sessions/${state.sessionId}/events`);
+    if (!response.ok) {
+      return;
+    }
+    const body = await response.json();
+    renderEvents(body.events || []);
+  } catch {
+    // Observation refresh should not block the chat flow.
+  }
+}
+
+function renderEvents(events) {
+  elements.events.replaceChildren();
+  for (const event of events) {
+    const item = document.createElement("li");
+    const type = document.createElement("strong");
+    const payload = document.createElement("code");
+    type.textContent = event.event_type;
+    payload.textContent = compactJson(sanitizePayload(event.payload || {}));
+    item.append(type, payload);
+    elements.events.append(item);
+  }
+}
+
+function sanitizePayload(value) {
+  if (Array.isArray(value)) {
+    return value.map(sanitizePayload);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !key.toLowerCase().includes("path"))
+        .map(([key, nested]) => [key, sanitizePayload(nested)])
+    );
+  }
+  if (typeof value === "string" && looksLikeLocalPath(value)) {
+    return "[local path hidden]";
+  }
+  return value;
+}
+
+function looksLikeLocalPath(value) {
+  return value.startsWith("/") || /^[A-Za-z]:\\/.test(value);
+}
+
+function compactJson(value) {
+  return JSON.stringify(value);
+}
+
+function setBusy(isBusy, message = "") {
+  state.busy = isBusy;
+  elements.status.textContent = message;
+  document.querySelectorAll("button, input").forEach((control) => {
+    control.disabled = isBusy;
+  });
+}
+
+function showError(error) {
+  elements.status.textContent = error.message || "Something went wrong.";
+}
