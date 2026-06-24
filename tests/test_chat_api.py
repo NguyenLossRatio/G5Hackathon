@@ -55,6 +55,45 @@ def test_chat_api_happy_path_downloads_generated_pdf(tmp_path, monkeypatch):
     assert "form_generation_succeeded" in event_types
 
 
+def test_chat_api_ambiguous_refund_check_text_does_not_complete(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAX_ASSISTANT_DB_PATH", str(tmp_path / "tax_assistant.sqlite3"))
+    monkeypatch.setenv("TAX_ASSISTANT_GENERATED_DIR", str(tmp_path / "generated"))
+    client = TestClient(app)
+    session_id = _api_session_at_refund_phase(client)
+
+    response = client.post(
+        "/api/chat/message",
+        json={"session_id": session_id, "answer": "I need to check later"},
+    ).json()
+
+    assert response["phase"] == "need_refund"
+    assert response["question_count"] == 5
+    assert "download_url" not in response
+    assert "question limit" in response["message"].lower()
+
+    saved_events = client.get(f"/api/sessions/{session_id}/events").json()["events"]
+    event_types = [event["event_type"] for event in saved_events]
+    assert "question_budget_exceeded" in event_types
+    assert "tax_calculation_started" not in event_types
+    assert "form_generation_started" not in event_types
+
+
+def test_chat_api_clear_paper_check_text_completes(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAX_ASSISTANT_DB_PATH", str(tmp_path / "tax_assistant.sqlite3"))
+    monkeypatch.setenv("TAX_ASSISTANT_GENERATED_DIR", str(tmp_path / "generated"))
+    client = TestClient(app)
+    session_id = _api_session_at_refund_phase(client)
+
+    response = client.post(
+        "/api/chat/message",
+        json={"session_id": session_id, "answer": "paper check"},
+    ).json()
+
+    assert response["phase"] == "complete"
+    assert response["question_count"] == 5
+    assert response["download_url"].startswith("/downloads/")
+
+
 def test_download_route_rejects_unknown_and_traversal_ids(tmp_path, monkeypatch):
     monkeypatch.setenv("TAX_ASSISTANT_DB_PATH", str(tmp_path / "tax_assistant.sqlite3"))
     monkeypatch.setenv("TAX_ASSISTANT_GENERATED_DIR", str(tmp_path / "generated"))
@@ -180,3 +219,17 @@ def test_upload_w2_rejects_non_pdf_extension_and_oversized_file(tmp_path, monkey
 
 
 SAMPLE_W2_BYTES = Path("assets/sample/sample-w2-2025.pdf").read_bytes()
+
+
+def _api_session_at_refund_phase(client: TestClient) -> str:
+    session_id = client.post("/api/chat/start").json()["session_id"]
+    client.post(
+        "/api/chat/upload-w2",
+        data={"session_id": session_id, "use_sample": "true"},
+    )
+    client.post("/api/chat/message", json={"session_id": session_id, "answer": "single"})
+    client.post("/api/chat/message", json={"session_id": session_id, "answer": "No dependents"})
+    refund = client.post("/api/chat/message", json={"session_id": session_id, "answer": False}).json()
+    assert refund["phase"] == "need_refund"
+    assert refund["question_count"] == 5
+    return session_id

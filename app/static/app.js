@@ -235,14 +235,22 @@ function answerValue(rawAnswer) {
 }
 
 function refundTextAnswer(value) {
-  const normalized = value.toLowerCase();
+  const normalized = normalizeRefundText(value);
   if (normalized.includes("direct deposit") || normalized.includes("routing") || normalized.includes("account")) {
     return fakeDirectDepositAnswer();
   }
-  if (normalized.includes("paper") || normalized.includes("check")) {
+  if (isPaperCheckText(normalized)) {
     return "paper_check";
   }
   return value;
+}
+
+function normalizeRefundText(value) {
+  return value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function isPaperCheckText(normalized) {
+  return normalized === "check" || normalized.includes("paper check");
 }
 
 function fakeDirectDepositAnswer() {
@@ -362,6 +370,8 @@ globalThis.__taxAssistantTestHooks = {
   canSendRequest,
   refundTextAnswer,
   fakeDirectDepositAnswer,
+  normalizeRefundText,
+  isPaperCheckText,
   sanitizePayload,
   shouldRedactPayloadKey,
   looksLikeLocalPath,

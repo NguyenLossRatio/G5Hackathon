@@ -373,10 +373,14 @@ def _coerce_refund_choice(value: Any) -> Any:
             return "paper_check"
         return value
     if isinstance(value, str):
-        normalized = value.strip().lower().replace("-", " ")
-        if "paper" in normalized or "check" in normalized:
+        if _is_paper_check_text(value):
             return "paper_check"
     return value
+
+
+def _is_paper_check_text(value: str) -> bool:
+    normalized = " ".join(value.strip().lower().replace("-", " ").replace("_", " ").split())
+    return normalized == "check" or "paper check" in normalized
 
 
 def _form_refund_choice(value: Any) -> Dict[str, Any]:

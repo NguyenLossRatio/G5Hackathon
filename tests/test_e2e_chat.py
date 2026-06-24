@@ -162,7 +162,8 @@ def test_chat_client_pure_functions_with_node_vm():
         hooks.state.busy = false;
 
         assert.strictEqual(hooks.refundTextAnswer("mail a paper check"), "paper_check");
-        assert.strictEqual(hooks.refundTextAnswer("check is fine"), "paper_check");
+        assert.strictEqual(hooks.refundTextAnswer("paper check is fine"), "paper_check");
+        assert.strictEqual(hooks.refundTextAnswer("I need to check later"), "I need to check later");
         assert.deepStrictEqual(JSON.parse(JSON.stringify(hooks.refundTextAnswer("use direct deposit"))), {
           method: "direct_deposit",
           routing_number: "000000000",
