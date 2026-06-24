@@ -19,14 +19,77 @@ ALLOWED_FILING_STATUSES = {
     "head_of_household": "head_of_household",
 }
 
+_US_STATE_NAMES = (
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
+    "district of columbia",
+)
+
+_STATE_NAME_PATTERN = "|".join(re.escape(state) for state in _US_STATE_NAMES)
+
 _OUT_OF_SCOPE_PATTERNS = (
+    ("form_1040_variant", r"\b(?:form\s+)?1040[-\s]?[a-z]{1,3}\b"),
     ("e_filing", r"\be[-\s]?fil(?:e|ing)\b|\belectronic(?:ally)?\s+fil(?:e|ing)\b"),
-    ("state_return", r"\bstate\s+(?:return|filing|tax|taxes)\b|\b(?:california|new york|texas|florida)\s+(?:return|filing|tax|taxes)\b"),
+    (
+        "state_return",
+        rf"\bstate\s+(?:return|filing|tax|taxes)\b|\b(?:{_STATE_NAME_PATTERN})\s+(?:return|filing|tax|taxes|preparation)\b",
+    ),
     ("real_tax_advice", r"\breal\s+tax\s+advice\b|\btax\s+advice\b|\bwhat\s+should\s+i\b|\brecommend(?:ation)?\b"),
     ("multiple_income_documents", r"\b(?:two|three|multiple|several)\s+(?:w-?2s?|income documents?)\b|\b1099\b|\bsecond\s+w-?2\b|\banother\s+w-?2\b"),
     ("self_employment", r"\bself[-\s]?employ(?:ed|ment)\b|\bschedule\s+c\b|\bbusiness\s+income\b|\bfreelanc"),
     ("capital_gains", r"\bcapital\s+gains?\b|\bsold\s+(?:stock|shares|crypto|bitcoin)\b|\b1099-?b\b|\bbrokerage\b"),
-    ("real_identity_data", r"\b\d{3}-\d{2}-\d{4}\b|\bssn\b|\bsocial security number\b|\breal\s+(?:identity|name|address|pii)\b|\bdate of birth\b"),
+    (
+        "real_identity_data",
+        r"\b\d{3}-\d{2}-\d{4}\b|\bssn\b|\bsocial security number\b|\breal\s+(?:identity|name|address|pii)\b|\blegal name\b|\bhome address\b|\bdate of birth\b|\b\d+\s+[a-z0-9 .'-]+\s+(?:st|street|ave|avenue|rd|road|blvd|drive|dr|lane|ln|way|court|ct)\b",
+    ),
     ("itemized_deductions", r"\bitemiz(?:e|ed|ing)\b|\bschedule\s+a\b"),
 )
 
@@ -37,7 +100,10 @@ def validate_scope_message(message: str) -> None:
         if year != "2025":
             raise GuardrailViolation("Only tax year 2025 is supported.", "unsupported_tax_year")
 
-    if re.search(r"\breal\s+fil(?:e|ing)\b|\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b", normalized):
+    if re.search(
+        r"\breal\s+fil(?:e|ing)\b|\bfile\s+my\s+real\s+tax\s+return\b|\breal\s+tax\s+return\b|\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b",
+        normalized,
+    ):
         raise GuardrailViolation("Real filing is outside this prototype scope.", "real_filing")
 
     for code, pattern in _OUT_OF_SCOPE_PATTERNS:
@@ -135,6 +201,7 @@ def _message_for_code(code: str) -> str:
         "capital_gains": "Capital gains are outside this prototype scope.",
         "real_identity_data": "Real identity data is not accepted.",
         "itemized_deductions": "Itemized deductions are outside this prototype scope.",
+        "form_1040_variant": "Only federal Form 1040 is supported.",
     }
     return messages.get(code, "Request is outside this prototype scope.")
 

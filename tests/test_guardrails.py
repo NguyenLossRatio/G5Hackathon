@@ -28,6 +28,10 @@ def test_scope_accepts_fake_2025_federal_1040_demo_request():
         "Use my real SSN 123-45-6789 and bank account.",
         "Let's itemize deductions instead of taking the standard deduction.",
         "Prepare this for tax year 2024.",
+        "federal Form 1040-NR",
+        "Please file my real tax return.",
+        "Please prepare my Illinois filing.",
+        "Use my legal name Alan Smith and home address 123 Main St.",
     ],
 )
 def test_scope_rejects_out_of_scope_requests(message):
