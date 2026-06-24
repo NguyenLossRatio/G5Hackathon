@@ -129,7 +129,7 @@ _US_STATE_ABBREVIATIONS = (
 )
 
 _STATE_NAME_PATTERN = "|".join(re.escape(state) for state in _US_STATE_NAMES)
-_UPPER_STATE_ABBREVIATION_PATTERN = "|".join(state.upper() for state in _US_STATE_ABBREVIATIONS)
+_STATE_ABBREVIATION_PATTERN = "|".join(re.escape(state) for state in _US_STATE_ABBREVIATIONS)
 
 _E_FILING_PATTERN = r"\be[-\s]?fil(?:e|ing)\b|\belectronic(?:ally)?\s+fil(?:e|ing)\b"
 _REAL_FILING_PATTERN = (
@@ -138,8 +138,9 @@ _REAL_FILING_PATTERN = (
     r"\bmail\s+this\s+return\s+to\s+(?:the\s+)?irs\b|\bsubmit\s+this\s+tax\s+return\s+for\s+me\b|"
     r"\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b"
 )
-_RAW_STATE_ABBREVIATION_PATTERN = (
-    rf"\b(?:{_UPPER_STATE_ABBREVIATION_PATTERN})\s+(?:tax\s+return|state\s+return|return|filing|preparation)\b"
+_STATE_ABBREVIATION_ACTION_PATTERN = (
+    rf"\b(?:prepare|file|do|complete)\s+(?:my\s+)?(?:{_STATE_ABBREVIATION_PATTERN})\s+"
+    r"(?:tax\s+return|state\s+return|return|filing|preparation)\b"
 )
 
 _OUT_OF_SCOPE_PATTERNS = (
@@ -162,7 +163,6 @@ _OUT_OF_SCOPE_PATTERNS = (
 
 
 def validate_scope_message(message: str) -> None:
-    raw_message = str(message or "")
     normalized = _normalize_text(message)
     for year in re.findall(r"\b20\d{2}\b", normalized):
         if year != "2025":
@@ -172,7 +172,7 @@ def validate_scope_message(message: str) -> None:
         raise GuardrailViolation(_message_for_code("e_filing"), "e_filing")
     if re.search(_REAL_FILING_PATTERN, normalized):
         raise GuardrailViolation("Real filing is outside this prototype scope.", "real_filing")
-    if re.search(_RAW_STATE_ABBREVIATION_PATTERN, raw_message):
+    if re.search(_STATE_ABBREVIATION_ACTION_PATTERN, normalized):
         raise GuardrailViolation(_message_for_code("state_return"), "state_return")
 
     for code, pattern in _OUT_OF_SCOPE_PATTERNS:
