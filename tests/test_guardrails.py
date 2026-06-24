@@ -99,6 +99,29 @@ def test_w2_rejects_invalid_document_count_values(document_count):
 
 
 @pytest.mark.parametrize(
+    "field,value",
+    [
+        ("box_1_wages", float("nan")),
+        ("box_1_wages", "nan"),
+        ("box_1_wages", float("inf")),
+        ("box_1_wages", "-inf"),
+        ("federal_income_tax_withheld", float("nan")),
+        ("federal_income_tax_withheld", "nan"),
+        ("federal_income_tax_withheld", float("inf")),
+        ("federal_income_tax_withheld", "-inf"),
+        ("box_3_social_security_wages", float("nan")),
+        ("box_3_social_security_wages", "nan"),
+        ("box_3_social_security_wages", float("inf")),
+        ("box_3_social_security_wages", "-inf"),
+    ],
+)
+def test_w2_rejects_non_finite_numeric_values(field, value):
+    with pytest.raises(GuardrailViolation) as excinfo:
+        validate_w2_data(valid_w2(**{field: value}))
+    assert excinfo.value.code == "invalid_w2_number"
+
+
+@pytest.mark.parametrize(
     "raw,normalized",
     [
         ("single", "single"),

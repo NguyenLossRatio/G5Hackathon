@@ -1,3 +1,4 @@
+import math
 import re
 from typing import Any, Dict, Tuple, Union
 
@@ -285,9 +286,12 @@ def _required_number(w2: Dict[str, Any], keys: Tuple[str, ...]) -> float:
     if isinstance(value, bool):
         raise GuardrailViolation("W-2 numeric field must be a number.", "invalid_w2_number")
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         raise GuardrailViolation("W-2 numeric field must be a number.", "invalid_w2_number")
+    if not math.isfinite(number):
+        raise GuardrailViolation("W-2 numeric field must be finite.", "invalid_w2_number")
+    return number
 
 
 def _document_count(w2: Dict[str, Any]) -> int:
