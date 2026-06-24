@@ -10,43 +10,50 @@ from app.guardrails.policy import (
 )
 
 
-def test_scope_accepts_fake_2025_federal_1040_demo_request():
-    validate_scope_message(
-        "Use one fake W-2 for tax year 2025 to prepare a federal Form 1040 demo."
-    )
-
-
 @pytest.mark.parametrize(
     "message",
     [
-        "Can you e-file this return for me?",
-        "Please prepare my California state filing too.",
-        "What real tax advice should I follow?",
-        "I have two W-2s and a 1099 to upload.",
-        "Add my self-employment Schedule C income.",
-        "I sold stock and need capital gains reported.",
-        "Use my real SSN 123-45-6789 and bank account.",
-        "Let's itemize deductions instead of taking the standard deduction.",
-        "Prepare this for tax year 2024.",
-        "federal Form 1040-NR",
-        "Please file my real tax return.",
-        "Please prepare my Illinois filing.",
-        "Use my legal name Alan Smith and home address 123 Main St.",
-        "Please file this return with the IRS.",
-        "Please file this tax return for me.",
-        "Please mail this return to the IRS.",
-        "Submit this tax return for me.",
-        "Can you prepare my state income tax return?",
-        "Can you do my state income taxes?",
-        "Prepare my NY tax return.",
-        "My DOB is 01/02/1990.",
-        "Use my actual name Alan Smith.",
-        "Use my address 742 Evergreen Terrace.",
+        "Use one fake W-2 for tax year 2025 to prepare a federal Form 1040 demo.",
+        "Show me tax year 2025 federal Form 1040 demo",
+        "withholding or tax withheld",
     ],
 )
-def test_scope_rejects_out_of_scope_requests(message):
-    with pytest.raises(GuardrailViolation):
+def test_scope_accepts_in_scope_demo_messages(message):
+    validate_scope_message(message)
+
+
+@pytest.mark.parametrize(
+    "message,code",
+    [
+        ("Can you e-file this return for me?", "e_filing"),
+        ("Please prepare my California state filing too.", "state_return"),
+        ("What real tax advice should I follow?", "real_tax_advice"),
+        ("I have two W-2s and a 1099 to upload.", "multiple_income_documents"),
+        ("Add my self-employment Schedule C income.", "self_employment"),
+        ("I sold stock and need capital gains reported.", "capital_gains"),
+        ("Use my real SSN 123-45-6789 and bank account.", "real_identity_data"),
+        ("Let's itemize deductions instead of taking the standard deduction.", "itemized_deductions"),
+        ("Prepare this for tax year 2024.", "unsupported_tax_year"),
+        ("federal Form 1040-NR", "form_1040_variant"),
+        ("Please file my real tax return.", "real_filing"),
+        ("Please prepare my Illinois filing.", "state_return"),
+        ("Use my legal name Alan Smith and home address 123 Main St.", "real_identity_data"),
+        ("Please file this return with the IRS.", "real_filing"),
+        ("Please file this tax return for me.", "real_filing"),
+        ("Please mail this return to the IRS.", "real_filing"),
+        ("Submit this tax return for me.", "real_filing"),
+        ("Can you prepare my state income tax return?", "state_return"),
+        ("Can you do my state income taxes?", "state_return"),
+        ("Prepare my NY tax return.", "state_return"),
+        ("My DOB is 01/02/1990.", "real_identity_data"),
+        ("Use my actual name Alan Smith.", "real_identity_data"),
+        ("Use my address 742 Evergreen Terrace.", "real_identity_data"),
+    ],
+)
+def test_scope_rejects_out_of_scope_requests(message, code):
+    with pytest.raises(GuardrailViolation) as excinfo:
         validate_scope_message(message)
+    assert excinfo.value.code == code
 
 
 def valid_w2(**overrides):
@@ -82,6 +89,13 @@ def test_w2_accepts_one_fake_2025_document_in_demo_ranges():
 def test_w2_rejects_values_outside_demo_scope(overrides):
     with pytest.raises(GuardrailViolation):
         validate_w2_data(valid_w2(**overrides))
+
+
+@pytest.mark.parametrize("document_count", ["two", None, True, False])
+def test_w2_rejects_invalid_document_count_values(document_count):
+    with pytest.raises(GuardrailViolation) as excinfo:
+        validate_w2_data(valid_w2(document_count=document_count))
+    assert excinfo.value.code == "invalid_document_count"
 
 
 @pytest.mark.parametrize(

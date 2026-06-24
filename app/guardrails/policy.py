@@ -128,14 +128,25 @@ _US_STATE_ABBREVIATIONS = (
 )
 
 _STATE_NAME_PATTERN = "|".join(re.escape(state) for state in _US_STATE_NAMES)
-_STATE_ABBREVIATION_PATTERN = "|".join(re.escape(state) for state in _US_STATE_ABBREVIATIONS)
+_UPPER_STATE_ABBREVIATION_PATTERN = "|".join(state.upper() for state in _US_STATE_ABBREVIATIONS)
+
+_E_FILING_PATTERN = r"\be[-\s]?fil(?:e|ing)\b|\belectronic(?:ally)?\s+fil(?:e|ing)\b"
+_REAL_FILING_PATTERN = (
+    r"\breal\s+fil(?:e|ing)\b|\bfile\s+my\s+real\s+tax\s+return\b|\breal\s+tax\s+return\b|"
+    r"\bfile\s+this\s+(?:tax\s+)?return\s+(?:with\s+(?:the\s+)?irs|for\s+me)\b|"
+    r"\bmail\s+this\s+return\s+to\s+(?:the\s+)?irs\b|\bsubmit\s+this\s+tax\s+return\s+for\s+me\b|"
+    r"\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b"
+)
+_RAW_STATE_ABBREVIATION_PATTERN = (
+    rf"\b(?:{_UPPER_STATE_ABBREVIATION_PATTERN})\s+(?:tax\s+return|return|filing|taxes|tax)\b"
+)
 
 _OUT_OF_SCOPE_PATTERNS = (
     ("form_1040_variant", r"\b(?:form\s+)?1040[-\s]?[a-z]{1,3}\b"),
-    ("e_filing", r"\be[-\s]?fil(?:e|ing)\b|\belectronic(?:ally)?\s+fil(?:e|ing)\b"),
+    ("e_filing", _E_FILING_PATTERN),
     (
         "state_return",
-        rf"\bstate\s+(?:income\s+)?(?:return|filing|tax|taxes|tax\s+return)\b|\b(?:{_STATE_NAME_PATTERN})\s+(?:return|filing|tax|taxes|tax\s+return|preparation)\b|\b(?:{_STATE_ABBREVIATION_PATTERN})\s+(?:return|filing|tax|taxes|tax\s+return)\b",
+        rf"\bstate\s+(?:income\s+)?(?:tax\s+return|return|filing|taxes|tax)\b|\b(?:{_STATE_NAME_PATTERN})\s+(?:tax\s+return|return|filing|taxes|tax|preparation)\b",
     ),
     ("real_tax_advice", r"\breal\s+tax\s+advice\b|\btax\s+advice\b|\bwhat\s+should\s+i\b|\brecommend(?:ation)?\b"),
     ("multiple_income_documents", r"\b(?:two|three|multiple|several)\s+(?:w-?2s?|income documents?)\b|\b1099\b|\bsecond\s+w-?2\b|\banother\s+w-?2\b"),
@@ -150,16 +161,18 @@ _OUT_OF_SCOPE_PATTERNS = (
 
 
 def validate_scope_message(message: str) -> None:
+    raw_message = str(message or "")
     normalized = _normalize_text(message)
     for year in re.findall(r"\b20\d{2}\b", normalized):
         if year != "2025":
             raise GuardrailViolation("Only tax year 2025 is supported.", "unsupported_tax_year")
 
-    if re.search(
-        r"\breal\s+fil(?:e|ing)\b|\bfile\s+my\s+real\s+tax\s+return\b|\breal\s+tax\s+return\b|\bfile\s+this\s+(?:tax\s+)?return\s+(?:with\s+(?:the\s+)?irs|for\s+me)\b|\bmail\s+this\s+return\s+to\s+(?:the\s+)?irs\b|\bsubmit\s+this\s+tax\s+return\s+for\s+me\b|\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b",
-        normalized,
-    ):
+    if re.search(_E_FILING_PATTERN, normalized):
+        raise GuardrailViolation(_message_for_code("e_filing"), "e_filing")
+    if re.search(_REAL_FILING_PATTERN, normalized):
         raise GuardrailViolation("Real filing is outside this prototype scope.", "real_filing")
+    if re.search(_RAW_STATE_ABBREVIATION_PATTERN, raw_message):
+        raise GuardrailViolation(_message_for_code("state_return"), "state_return")
 
     for code, pattern in _OUT_OF_SCOPE_PATTERNS:
         if re.search(pattern, normalized):
@@ -174,7 +187,7 @@ def validate_w2_data(w2: Dict[str, Any]) -> None:
         raise GuardrailViolation("Only tax year 2025 is supported.", "unsupported_tax_year")
     if w2.get("is_fake") is not True:
         raise GuardrailViolation("Only fake W-2 data is accepted.", "real_w2")
-    if int(w2.get("document_count", 1)) != 1:
+    if _document_count(w2) != 1:
         raise GuardrailViolation("Only one W-2 document is supported.", "multiple_income_documents")
 
     wages = _required_number(w2, ("box_1_wages", "wages", "box1_wages"))
@@ -275,6 +288,17 @@ def _required_number(w2: Dict[str, Any], keys: Tuple[str, ...]) -> float:
         return float(value)
     except (TypeError, ValueError):
         raise GuardrailViolation("W-2 numeric field must be a number.", "invalid_w2_number")
+
+
+def _document_count(w2: Dict[str, Any]) -> int:
+    value = w2.get("document_count", 1)
+    if isinstance(value, bool):
+        raise GuardrailViolation("Document count must be an integer.", "invalid_document_count")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):
+        return int(value)
+    raise GuardrailViolation("Document count must be an integer.", "invalid_document_count")
 
 
 def _is_fake_routing_number(value: str) -> bool:
