@@ -32,6 +32,16 @@ def test_scope_accepts_fake_2025_federal_1040_demo_request():
         "Please file my real tax return.",
         "Please prepare my Illinois filing.",
         "Use my legal name Alan Smith and home address 123 Main St.",
+        "Please file this return with the IRS.",
+        "Please file this tax return for me.",
+        "Please mail this return to the IRS.",
+        "Submit this tax return for me.",
+        "Can you prepare my state income tax return?",
+        "Can you do my state income taxes?",
+        "Prepare my NY tax return.",
+        "My DOB is 01/02/1990.",
+        "Use my actual name Alan Smith.",
+        "Use my address 742 Evergreen Terrace.",
     ],
 )
 def test_scope_rejects_out_of_scope_requests(message):

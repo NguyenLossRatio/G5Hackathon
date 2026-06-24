@@ -73,14 +73,69 @@ _US_STATE_NAMES = (
     "district of columbia",
 )
 
+_US_STATE_ABBREVIATIONS = (
+    "al",
+    "ak",
+    "az",
+    "ar",
+    "ca",
+    "co",
+    "ct",
+    "de",
+    "fl",
+    "ga",
+    "hi",
+    "id",
+    "il",
+    "in",
+    "ia",
+    "ks",
+    "ky",
+    "la",
+    "me",
+    "md",
+    "ma",
+    "mi",
+    "mn",
+    "ms",
+    "mo",
+    "mt",
+    "ne",
+    "nv",
+    "nh",
+    "nj",
+    "nm",
+    "ny",
+    "nc",
+    "nd",
+    "oh",
+    "ok",
+    "or",
+    "pa",
+    "ri",
+    "sc",
+    "sd",
+    "tn",
+    "tx",
+    "ut",
+    "vt",
+    "va",
+    "wa",
+    "wv",
+    "wi",
+    "wy",
+    "dc",
+)
+
 _STATE_NAME_PATTERN = "|".join(re.escape(state) for state in _US_STATE_NAMES)
+_STATE_ABBREVIATION_PATTERN = "|".join(re.escape(state) for state in _US_STATE_ABBREVIATIONS)
 
 _OUT_OF_SCOPE_PATTERNS = (
     ("form_1040_variant", r"\b(?:form\s+)?1040[-\s]?[a-z]{1,3}\b"),
     ("e_filing", r"\be[-\s]?fil(?:e|ing)\b|\belectronic(?:ally)?\s+fil(?:e|ing)\b"),
     (
         "state_return",
-        rf"\bstate\s+(?:return|filing|tax|taxes)\b|\b(?:{_STATE_NAME_PATTERN})\s+(?:return|filing|tax|taxes|preparation)\b",
+        rf"\bstate\s+(?:income\s+)?(?:return|filing|tax|taxes|tax\s+return)\b|\b(?:{_STATE_NAME_PATTERN})\s+(?:return|filing|tax|taxes|tax\s+return|preparation)\b|\b(?:{_STATE_ABBREVIATION_PATTERN})\s+(?:return|filing|tax|taxes|tax\s+return)\b",
     ),
     ("real_tax_advice", r"\breal\s+tax\s+advice\b|\btax\s+advice\b|\bwhat\s+should\s+i\b|\brecommend(?:ation)?\b"),
     ("multiple_income_documents", r"\b(?:two|three|multiple|several)\s+(?:w-?2s?|income documents?)\b|\b1099\b|\bsecond\s+w-?2\b|\banother\s+w-?2\b"),
@@ -88,7 +143,7 @@ _OUT_OF_SCOPE_PATTERNS = (
     ("capital_gains", r"\bcapital\s+gains?\b|\bsold\s+(?:stock|shares|crypto|bitcoin)\b|\b1099-?b\b|\bbrokerage\b"),
     (
         "real_identity_data",
-        r"\b\d{3}-\d{2}-\d{4}\b|\bssn\b|\bsocial security number\b|\breal\s+(?:identity|name|address|pii)\b|\blegal name\b|\bhome address\b|\bdate of birth\b|\b\d+\s+[a-z0-9 .'-]+\s+(?:st|street|ave|avenue|rd|road|blvd|drive|dr|lane|ln|way|court|ct)\b",
+        r"\b\d{3}-\d{2}-\d{4}\b|\bssn\b|\bsocial security number\b|\breal\s+(?:identity|name|address|pii)\b|\blegal name\b|\bactual name\b|\bhome address\b|\bmy address\b|\bdate of birth\b|\bdob\s+(?:is\s+)?\d{1,2}/\d{1,2}/\d{4}\b|\b\d+\s+[a-z0-9 .'-]+\s+(?:st|street|ave|avenue|rd|road|blvd|drive|dr|lane|ln|way|court|ct|terrace|ter)\b",
     ),
     ("itemized_deductions", r"\bitemiz(?:e|ed|ing)\b|\bschedule\s+a\b"),
 )
@@ -101,7 +156,7 @@ def validate_scope_message(message: str) -> None:
             raise GuardrailViolation("Only tax year 2025 is supported.", "unsupported_tax_year")
 
     if re.search(
-        r"\breal\s+fil(?:e|ing)\b|\bfile\s+my\s+real\s+tax\s+return\b|\breal\s+tax\s+return\b|\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b",
+        r"\breal\s+fil(?:e|ing)\b|\bfile\s+my\s+real\s+tax\s+return\b|\breal\s+tax\s+return\b|\bfile\s+this\s+(?:tax\s+)?return\s+(?:with\s+(?:the\s+)?irs|for\s+me)\b|\bmail\s+this\s+return\s+to\s+(?:the\s+)?irs\b|\bsubmit\s+this\s+tax\s+return\s+for\s+me\b|\bsubmit\s+(?:to|with)\s+(?:the\s+)?irs\b",
         normalized,
     ):
         raise GuardrailViolation("Real filing is outside this prototype scope.", "real_filing")
