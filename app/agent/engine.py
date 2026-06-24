@@ -3,7 +3,7 @@ from typing import Any, Dict, Mapping, Optional
 from uuid import uuid4
 
 from app.agent import messages
-from app.agent.state import Phase, TaxSession
+from app.agent.state import Phase, QuestionBudgetExceeded, TaxSession
 from app.guardrails.policy import (
     GuardrailViolation,
     validate_digital_assets,
@@ -75,8 +75,7 @@ def handle_message(
     value = answer if answer is not None else message
     try:
         if session.phase == "need_w2":
-            db.save_session(session)
-            return _response(session, messages.retry_message(session.phase))
+            return _retry_response(session)
         if session.phase == "need_filing_status":
             return _handle_filing_status(session, value)
         if session.phase == "need_household":
@@ -89,8 +88,7 @@ def handle_message(
         return _response(session, messages.retry_message(session.phase))
     except GuardrailViolation as exc:
         _record_guardrail_violation(session, exc, session.phase)
-        db.save_session(session)
-        return _response(session, messages.retry_message(session.phase))
+        return _retry_response(session)
 
 
 def resolve_download(download_id: str) -> Path:
@@ -158,7 +156,10 @@ def _prepare_return(session: TaxSession) -> None:
         record_event(
             session.session_id,
             "tax_calculation_failed",
-            {"input_summary": {"filing_status": filing_status}, "error": str(exc)},
+            {
+                "input_summary": {"filing_status": filing_status},
+                "failure_summary": {"error": str(exc)},
+            },
         )
         raise
 
@@ -200,7 +201,10 @@ def _prepare_return(session: TaxSession) -> None:
         record_event(
             session.session_id,
             "form_generation_failed",
-            {"input_summary": {"filing_status": filing_status}, "error": str(exc)},
+            {
+                "input_summary": {"filing_status": filing_status},
+                "failure_summary": {"error": str(exc)},
+            },
         )
         raise
 
@@ -257,6 +261,27 @@ def _response(session: TaxSession, message: str) -> Dict[str, Any]:
     if session.phase == "complete" and session.download_id:
         payload["download_url"] = f"/downloads/{session.download_id}"
     return payload
+
+
+def _retry_response(session: TaxSession) -> Dict[str, Any]:
+    try:
+        _ask_question(session, session.phase)
+        message = messages.retry_message(session.phase)
+    except QuestionBudgetExceeded as exc:
+        record_event(
+            session.session_id,
+            "question_budget_exceeded",
+            {
+                "input_summary": {
+                    "phase": session.phase,
+                    "question_count": session.question_count,
+                },
+                "failure_summary": {"error": str(exc)},
+            },
+        )
+        message = messages.question_budget_message()
+    db.save_session(session)
+    return _response(session, message)
 
 
 def _actions_for_phase(phase: str) -> list:

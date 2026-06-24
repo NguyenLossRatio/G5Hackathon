@@ -51,10 +51,16 @@ def test_parse_sample_w2_records_success_observation_events(tmp_path, monkeypatc
         "w2_parse_succeeded",
     ]
     assert events[0]["payload"] == {
+        "input_summary": {
+            "file_name": "sample-w2-2025.pdf",
+            "source": "sample_w2",
+        },
+    }
+    assert events[1]["payload"]["input_summary"] == {
         "file_name": "sample-w2-2025.pdf",
         "source": "sample_w2",
     }
-    assert events[1]["payload"]["summary"] == {
+    assert events[1]["payload"]["result_summary"] == {
         "tax_year": 2025,
         "is_fake": True,
         "document_count": 1,
@@ -79,8 +85,17 @@ def test_parse_sample_w2_records_failure_observation_event(tmp_path, monkeypatch
         "w2_parse_started",
         "w2_parse_failed",
     ]
-    assert events[1]["payload"]["file_name"] == "missing-w2.pdf"
-    assert events[1]["payload"]["error"] == "W-2 PDF not found"
+    assert events[0]["payload"] == {
+        "input_summary": {
+            "file_name": "missing-w2.pdf",
+            "source": "sample_w2",
+        },
+    }
+    assert events[1]["payload"]["input_summary"] == {
+        "file_name": "missing-w2.pdf",
+        "source": "sample_w2",
+    }
+    assert events[1]["payload"]["failure_summary"] == {"error": "W-2 PDF not found"}
     assert_no_local_paths(events)
 
 

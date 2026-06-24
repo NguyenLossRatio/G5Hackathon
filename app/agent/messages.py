@@ -56,6 +56,13 @@ def refusal_message(code: str) -> str:
     )
 
 
+def question_budget_message() -> str:
+    return (
+        "We've reached the five-question limit for this prototype. "
+        "I can't ask another question in this session."
+    )
+
+
 def retry_message(phase: str) -> str:
     messages = {
         "need_w2": w2_intake_question(),

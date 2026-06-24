@@ -32,8 +32,8 @@ class W2Data(BaseModel):
 
 def parse_w2_pdf(pdf_path: Union[str, Path], session_id: str) -> W2Data:
     path = Path(pdf_path)
-    event_payload = _file_payload(path)
-    record_event(session_id, "w2_parse_started", event_payload)
+    input_summary = _file_payload(path)
+    record_event(session_id, "w2_parse_started", {"input_summary": input_summary})
 
     try:
         if not path.exists():
@@ -82,17 +82,34 @@ def parse_w2_pdf(pdf_path: Union[str, Path], session_id: str) -> W2Data:
             ),
         )
     except W2ParseError as exc:
-        record_event(session_id, "w2_parse_failed", {**event_payload, "error": str(exc)})
+        record_event(
+            session_id,
+            "w2_parse_failed",
+            {
+                "input_summary": input_summary,
+                "failure_summary": {"error": str(exc)},
+            },
+        )
         raise
     except Exception as exc:
         error = W2ParseError("Unable to parse W-2 PDF")
-        record_event(session_id, "w2_parse_failed", {**event_payload, "error": str(error)})
+        record_event(
+            session_id,
+            "w2_parse_failed",
+            {
+                "input_summary": input_summary,
+                "failure_summary": {"error": str(error)},
+            },
+        )
         raise error from exc
 
     record_event(
         session_id,
         "w2_parse_succeeded",
-        {**event_payload, "summary": _summary(w2)},
+        {
+            "input_summary": input_summary,
+            "result_summary": _summary(w2),
+        },
     )
     return w2
 
