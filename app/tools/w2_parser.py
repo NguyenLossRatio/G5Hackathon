@@ -137,7 +137,7 @@ def _required_match(text: str, pattern: str, field_name: str) -> str:
 def _file_payload(path: Path) -> Dict[str, str]:
     return {
         "file_name": path.name,
-        "file_path": str(path),
+        "source": "sample_w2",
     }
 
 
