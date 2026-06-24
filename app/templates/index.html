@@ -18,31 +18,31 @@
         </header>
         <div id="messages" class="messages" aria-live="polite" aria-label="Conversation"></div>
         <div class="controls" aria-label="Chat controls">
-          <div id="w2-actions" class="control-group">
+          <div id="w2-actions" class="control-group" hidden>
             <button id="sample-w2-button" type="button">Use sample W-2</button>
             <label class="upload-label" for="w2-upload">Upload W-2 PDF</label>
             <input id="w2-upload" name="file" type="file" accept="application/pdf">
           </div>
 
-          <div id="filing-status-actions" class="control-group chip-group" aria-label="Filing status">
+          <div id="filing-status-actions" class="control-group chip-group" aria-label="Filing status" hidden>
             <button type="button" data-answer="single">Single</button>
             <button type="button" data-answer="married_filing_jointly">Married filing jointly</button>
             <button type="button" data-answer="married_filing_separately">Married filing separately</button>
             <button type="button" data-answer="head_of_household">Head of household</button>
           </div>
 
-          <div id="digital-assets-actions" class="control-group chip-group" aria-label="Digital assets">
+          <div id="digital-assets-actions" class="control-group chip-group" aria-label="Digital assets" hidden>
             <button type="button" data-answer="true">Yes</button>
             <button type="button" data-answer="false">No</button>
           </div>
 
-          <div id="refund-actions" class="control-group chip-group" aria-label="Refund method">
+          <div id="refund-actions" class="control-group chip-group" aria-label="Refund method" hidden>
             <button type="button" data-answer="paper_check">Paper check</button>
             <button type="button" data-answer="direct_deposit">Direct deposit</button>
           </div>
 
-          <form id="chat-form" class="chat-form">
-            <input id="message-input" name="message" type="text" autocomplete="off" placeholder="Type household details">
+          <form id="chat-form" class="chat-form" hidden>
+            <input id="message-input" name="message" type="text" autocomplete="off" placeholder="Type household details" aria-label="Message">
             <button type="submit">Send</button>
           </form>
 

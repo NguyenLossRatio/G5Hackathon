@@ -37,7 +37,7 @@ const phaseLabels = {
 document.addEventListener("DOMContentLoaded", startChat);
 
 elements.sampleButton?.addEventListener("click", async () => {
-  if (!state.sessionId) {
+  if (!canSendRequest()) {
     return;
   }
   appendMessage("user", "Use sample W-2");
@@ -46,7 +46,7 @@ elements.sampleButton?.addEventListener("click", async () => {
 
 elements.uploadInput?.addEventListener("change", async () => {
   const file = elements.uploadInput.files?.[0];
-  if (!file || !state.sessionId) {
+  if (!file || !canSendRequest()) {
     return;
   }
   appendMessage("user", `Upload ${file.name}`);
@@ -56,6 +56,9 @@ elements.uploadInput?.addEventListener("change", async () => {
 
 document.querySelectorAll("[data-answer]").forEach((button) => {
   button.addEventListener("click", async () => {
+    if (!canSendRequest()) {
+      return;
+    }
     const rawAnswer = button.dataset.answer;
     const answer = answerValue(rawAnswer);
     appendMessage("user", button.textContent.trim());
@@ -65,6 +68,9 @@ document.querySelectorAll("[data-answer]").forEach((button) => {
 
 elements.chatForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!canSendRequest()) {
+    return;
+  }
   const value = elements.messageInput.value.trim();
   if (!value) {
     return;
@@ -90,6 +96,10 @@ async function startChat() {
   } finally {
     setBusy(false);
   }
+}
+
+function canSendRequest() {
+  return Boolean(state.sessionId) && !state.busy;
 }
 
 async function uploadW2({ useSample = false, file = null }) {
@@ -229,7 +239,10 @@ function refundTextAnswer(value) {
   if (normalized.includes("direct deposit") || normalized.includes("routing") || normalized.includes("account")) {
     return fakeDirectDepositAnswer();
   }
-  return "paper_check";
+  if (normalized.includes("paper") || normalized.includes("check")) {
+    return "paper_check";
+  }
+  return value;
 }
 
 function fakeDirectDepositAnswer() {
@@ -288,18 +301,44 @@ function sanitizePayload(value) {
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => !key.toLowerCase().includes("path"))
-        .map(([key, nested]) => [key, sanitizePayload(nested)])
+        .map(([key, nested]) => [
+          key,
+          shouldRedactPayloadKey(key) ? redactPathValue(nested) : sanitizePayload(nested),
+        ])
     );
   }
-  if (typeof value === "string" && looksLikeLocalPath(value)) {
-    return "[local path hidden]";
+  if (typeof value === "string") {
+    return redactLocalPaths(value);
   }
   return value;
 }
 
+function shouldRedactPayloadKey(key) {
+  const normalized = key.toLowerCase();
+  return normalized === "path"
+    || normalized.endsWith("_path")
+    || normalized.endsWith("_dir")
+    || normalized.endsWith("_file");
+}
+
+function redactPathValue(value) {
+  if (typeof value === "string") {
+    const redacted = redactLocalPaths(value);
+    return redacted === value ? "[local path hidden]" : redacted;
+  }
+  return "[local path hidden]";
+}
+
+function redactLocalPaths(value) {
+  return value.replace(localPathPattern(), "[local path hidden]");
+}
+
 function looksLikeLocalPath(value) {
-  return value.startsWith("/") || /^[A-Za-z]:\\/.test(value);
+  return localPathPattern().test(value);
+}
+
+function localPathPattern() {
+  return /(file:\/\/\/[^\s"',;)}\]]+|(?:~|\/Users|\/tmp|\/private\/tmp|\/var|\/private\/var)(?:\/[^\s"',;)}\]]*)*|[A-Za-z]:\\[^\s"',;)}\]]+)/g;
 }
 
 function compactJson(value) {
@@ -317,3 +356,13 @@ function setBusy(isBusy, message = "") {
 function showError(error) {
   elements.status.textContent = error.message || "Something went wrong.";
 }
+
+globalThis.__taxAssistantTestHooks = {
+  state,
+  canSendRequest,
+  refundTextAnswer,
+  fakeDirectDepositAnswer,
+  sanitizePayload,
+  shouldRedactPayloadKey,
+  looksLikeLocalPath,
+};
