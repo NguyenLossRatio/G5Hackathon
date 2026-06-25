@@ -27,22 +27,31 @@ python -m venv .venv
 
 Then open `http://127.0.0.1:8000`.
 
-## Render Deployment
+## Railway Deployment
 
-Live URL: `TBD`
+Live URL: `https://g5-hackathon-production.up.railway.app`
 
-Deployment is not live yet. After creating a Render account and connecting this
-repository, create a new Blueprint deployment from `render.yaml`. The service
-uses:
+The app is deployed to the Railway project `G5 Hackathon`, service
+`g5-hackathon`.
+
+Railway uses `railway.json`:
+
+- Build: Nixpacks
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Generated PDF directory: `/tmp/tax-assistant-generated`
+- SQLite database path: `/tmp/tax-assistant.sqlite3`
+
+The repository also includes `render.yaml` for comparable Render deployment.
+That service would use:
 
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Generated PDF directory: `/tmp/tax-assistant-generated`
 - SQLite database path: `/tmp/tax-assistant.sqlite3`
 
-Render free web services have an ephemeral filesystem. Generated PDFs and the
-SQLite database stored under `/tmp` can be removed when the service restarts or
-is redeployed, which is acceptable for this hackathon demo.
+Railway and Render free/ephemeral runtimes can remove files stored under `/tmp`
+when the service restarts or is redeployed, which is acceptable for this
+hackathon demo.
 
 ## Demo Flow
 
